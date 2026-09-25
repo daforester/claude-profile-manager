@@ -95,8 +95,13 @@ func TestPOSIXScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Replace the trailing interactive shell so the test terminates.
+	// true is /bin/true on Linux but /usr/bin/true on macOS.
+	trueBin, err := exec.LookPath("true")
+	if err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command("/bin/sh", script)
-	cmd.Env = append(os.Environ(), "SHELL=/bin/true", "ANTHROPIC_AUTH_TOKEN=leak")
+	cmd.Env = append(os.Environ(), "SHELL="+trueBin, "ANTHROPIC_AUTH_TOKEN=leak")
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("script failed: %v\n%s", err, b)
 	}
