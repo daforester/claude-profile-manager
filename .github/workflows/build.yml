@@ -1,0 +1,69 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+          - os: macos-latest
+            target: darwin
+          - os: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Linux GUI dependencies
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+
+      - name: Resolve modules
+        run: go mod tidy
+
+      - name: Test
+        run: go test ./internal/...
+
+      - name: Install fyne CLI
+        run: go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Package GUI
+        shell: bash
+        run: |
+          VERSION=$(git describe --tags --always)
+          APPVER=$(echo "$VERSION" | sed -E 's/^v//; s/-.*$//')
+          [[ "$APPVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || APPVER=0.1.0
+          fyne package --release --target ${{ matrix.target }} --app-version "$APPVER" --name "Claude Profile Manager"
+          mkdir -p dist
+          case "${{ matrix.target }}" in
+            windows) mv "Claude Profile Manager.exe" dist/claude-profile-manager.exe ;;
+            darwin)  ditto -c -k --keepParent "Claude Profile Manager.app" dist/claude-profile-manager-macos.zip ;;
+            linux)   mv *.tar.xz dist/claude-profile-manager-linux.tar.xz ;;
+          esac
+
+      - name: Build cpm CLI
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          EXT=""; [ "${{ matrix.target }}" = windows ] && EXT=.exe
+          go build -ldflags "-s -w -X claude-profile-manager/internal/cli.Version=$(git describe --tags --always)" -o dist/cpm-${{ matrix.target }}$EXT ./cmd/cpm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-profile-manager-${{ matrix.target }}
+          path: dist/*

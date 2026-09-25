@@ -1,0 +1,11 @@
+Website = "https://github.com/"
+
+[Details]
+Icon = "assets/icon.png"
+Name = "Claude Profile Manager"
+ID = "io.github.claudeprofilemanager"
+Version = "0.1.0"
+Build = 1
+
+[Release]
+BuildName = "claude-profile-manager"

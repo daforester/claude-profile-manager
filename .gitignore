@@ -1,0 +1,7 @@
+/dist/
+/bin/
+.idea
+*.exe
+*.app
+*.tar.xz
+fyne-cross/
