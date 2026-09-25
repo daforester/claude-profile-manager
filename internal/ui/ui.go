@@ -93,7 +93,7 @@ func Run(root string, store *profile.Store, st *settings.Settings) {
 			g.win.Hide()
 			return
 		}
-		a.Quit()
+		g.quit()
 	})
 	// Pick up logins that happened in a launched Claude while we were in
 	// the background.
@@ -151,6 +151,7 @@ func (g *gui) build() fyne.CanvasObject {
 			bar := barBox.Objects[0].(*usageBar)
 			if u := g.usageOf(p.ID); u.Session != nil {
 				bar.Set(u.Session.Utilization, true)
+				bar.SetStale(u.Stale())
 				barBox.Show()
 			} else {
 				barBox.Hide()
@@ -535,6 +536,9 @@ func (g *gui) refreshTray() {
 		label := p.Name
 		if u := g.usageOf(p.ID); u.Session != nil {
 			label += fmt.Sprintf("  —  %.0f%%", u.Session.Utilization)
+			if u.Stale() {
+				label += " (" + staleReason(u) + ")"
+			}
 		}
 		item := fyne.NewMenuItem(label, nil)
 		item.ChildMenu = fyne.NewMenu("",
@@ -548,7 +552,7 @@ func (g *gui) refreshTray() {
 	if len(items) > 0 {
 		items = append(items, fyne.NewMenuItemSeparator())
 	}
-	quit := fyne.NewMenuItem("Quit Claude Profile Manager", func() { g.app.Quit() })
+	quit := fyne.NewMenuItem("Quit Claude Profile Manager", g.quit)
 	quit.IsQuit = true
 	items = append(items,
 		fyne.NewMenuItem("Usage pop-out", g.togglePopout),

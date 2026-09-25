@@ -23,7 +23,14 @@ type Monitor struct {
 	data    map[string]Usage
 	nextDue map[string]time.Time
 	backoff map[string]time.Duration
-	wake    chan string // profile ID to refresh now ("" = all)
+	// notBefore holds the end of a server rate limit; manual refreshes
+	// don't bypass it.
+	notBefore map[string]time.Time
+	// expiredToken is the fingerprint of a token that has expired or was
+	// rejected. The API answers those with 429s, so it isn't called again
+	// until Claude Code stores a different token.
+	expiredToken map[string]string
+	wake         chan string // profile ID to refresh now ("" = all)
 }
 
 // NewMonitor creates a monitor; onUpdate is called from a background
@@ -32,6 +39,7 @@ func NewMonitor(root string, store *profile.Store, interval func() time.Duration
 	m := &Monitor{
 		root: root, store: store, interval: interval, onUpdate: onUpdate,
 		data: map[string]Usage{}, nextDue: map[string]time.Time{}, backoff: map[string]time.Duration{},
+		notBefore: map[string]time.Time{}, expiredToken: map[string]string{},
 		wake: make(chan string, 16),
 	}
 	m.loadCache()
@@ -66,7 +74,7 @@ func (m *Monitor) Run(ctx context.Context) {
 			m.mu.Lock()
 			for pid := range m.nextDue {
 				if id == "" || id == pid {
-					delete(m.nextDue, pid)
+					m.nextDue[pid] = m.notBefore[pid]
 				}
 			}
 			m.mu.Unlock()
@@ -85,12 +93,20 @@ func (m *Monitor) pollDue(ctx context.Context, only string) {
 		}
 		m.mu.Lock()
 		due := m.nextDue[p.ID]
+		expired, waiting := m.expiredToken[p.ID]
 		m.mu.Unlock()
-		if now.Before(due) {
+		if now.Before(due) && !(waiting && m.tokenChanged(p, expired)) {
 			continue
 		}
 		m.pollOne(ctx, p)
 	}
+}
+
+// tokenChanged reports whether the profile now has a token other than the
+// expired one, i.e. Claude Code has signed in again.
+func (m *Monitor) tokenChanged(p *profile.Profile, expired string) bool {
+	creds, err := ReadCredentials(p)
+	return err == nil && fingerprint(creds.AccessToken) != expired && !creds.Expired(time.Now())
 }
 
 func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
@@ -98,6 +114,15 @@ func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
 	next := prev
 	interval := m.interval()
 	delay := interval
+	var notBefore time.Time
+	expired := ""
+
+	loginExpired := func(creds *Credentials) {
+		next.Err = ErrUnauthorized.Error()
+		next.LoginExpired = true
+		next.NoLogin = false
+		expired = fingerprint(creds.AccessToken)
+	}
 
 	creds, err := ReadCredentials(p)
 	switch {
@@ -105,6 +130,9 @@ func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
 		next = Usage{NoLogin: true}
 	case err != nil:
 		next.Err = err.Error()
+	case creds.Expired(time.Now()):
+		// Calling the API with an expired token only earns a rate limit.
+		loginExpired(creds)
 	default:
 		cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 		u, ferr := Fetch(cctx, creds.AccessToken)
@@ -114,10 +142,9 @@ func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
 		case ferr == nil:
 			u.Plan = creds.SubscriptionType
 			next = u
-			m.mu.Lock()
-			delete(m.backoff, p.ID)
-			m.mu.Unlock()
-		case errors.As(ferr, &rl):
+		case errors.Is(ferr, ErrUnauthorized), errors.As(ferr, &rl) && creds.Expired(time.Now()):
+			loginExpired(creds)
+		case rl != nil:
 			m.mu.Lock()
 			b := m.backoff[p.ID]*2 + time.Minute
 			if b < interval {
@@ -126,24 +153,36 @@ func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
 			if b > 30*time.Minute {
 				b = 30 * time.Minute
 			}
-			if rl.RetryAfter > b {
-				b = rl.RetryAfter
-			}
 			m.backoff[p.ID] = b
 			m.mu.Unlock()
-			delay = b
-			next.Err = ferr.Error()
-		default:
-			if !creds.ExpiresAt.IsZero() && time.Now().After(creds.ExpiresAt) {
-				next.Err = "login token expired — run Claude Code in this profile to refresh it"
-			} else {
-				next.Err = ferr.Error()
+			if rl.RetryAfter > 0 {
+				b = rl.RetryAfter + 5*time.Second
 			}
+			delay = b
+			notBefore = time.Now().Add(b)
+			next.Err = ferr.Error()
+			next.LoginExpired = false
+		default:
+			next.Err = ferr.Error()
 			next.NoLogin = false
+			next.LoginExpired = false
 		}
 	}
 
 	m.mu.Lock()
+	if next.Err == "" {
+		delete(m.backoff, p.ID)
+	}
+	if expired != "" {
+		m.expiredToken[p.ID] = expired
+	} else {
+		delete(m.expiredToken, p.ID)
+	}
+	if notBefore.IsZero() {
+		delete(m.notBefore, p.ID)
+	} else {
+		m.notBefore[p.ID] = notBefore
+	}
 	m.data[p.ID] = next
 	m.nextDue[p.ID] = time.Now().Add(delay)
 	m.mu.Unlock()

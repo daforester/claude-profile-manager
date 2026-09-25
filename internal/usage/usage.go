@@ -57,10 +57,17 @@ type Usage struct {
 	Err string `json:"err,omitempty"`
 	// NoLogin means the profile has no Claude Code login to read usage with.
 	NoLogin bool `json:"noLogin,omitempty"`
+	// LoginExpired means the stored token has expired or was rejected;
+	// polling resumes once Claude Code writes a new one.
+	LoginExpired bool `json:"loginExpired,omitempty"`
 }
 
 // Has reports whether any numbers are available.
 func (u Usage) Has() bool { return u.Session != nil || u.Weekly != nil }
+
+// Stale reports whether the numbers shown are left over from an earlier
+// refresh because the latest one failed.
+func (u Usage) Stale() bool { return u.Err != "" && u.Has() }
 
 // Metric picks the value tray icons track: "session", "weekly" or "max".
 func (u Usage) Metric(which string) (float64, bool) {
@@ -132,6 +139,17 @@ func ReadCredentials(p *profile.Profile) (*Credentials, error) {
 	return c, nil
 }
 
+// Expired reports whether the token is past its expiry time.
+func (c *Credentials) Expired(now time.Time) bool {
+	return !c.ExpiresAt.IsZero() && !now.Before(c.ExpiresAt)
+}
+
+// fingerprint identifies a token without keeping the token itself around.
+func fingerprint(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:8])
+}
+
 // KeychainService is the macOS Keychain service Claude Code uses for a
 // config dir: plain for ~/.claude when CLAUDE_CONFIG_DIR is unset, otherwise
 // suffixed with the first 8 hex chars of SHA-256(config dir).
@@ -144,7 +162,11 @@ func KeychainService(configDir string) string {
 }
 
 func keychain(configDir string) ([]byte, error) {
-	out, err := exec.Command("security", "find-generic-password", "-s", KeychainService(configDir), "-w").Output()
+	// A locked keychain can make `security` wait on a GUI prompt; don't let
+	// that stall the monitor.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "security", "find-generic-password", "-s", KeychainService(configDir), "-w").Output()
 	if err != nil {
 		return nil, err
 	}
@@ -155,6 +177,20 @@ func keychain(configDir string) ([]byte, error) {
 type RateLimitError struct{ RetryAfter time.Duration }
 
 func (e *RateLimitError) Error() string { return "usage API rate-limited; will retry later" }
+
+// ErrUnauthorized means the API rejected the token.
+var ErrUnauthorized = errors.New("login expired — open Claude Code in this profile to refresh it")
+
+// parseRetryAfter reads a Retry-After header in seconds or HTTP-date form.
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	if s, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && s > 0 {
+		return time.Duration(s) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil && t.After(now) {
+		return t.Sub(now)
+	}
+	return 0
+}
 
 type apiWindow struct {
 	Utilization *float64 `json:"utilization"`
@@ -186,13 +222,9 @@ func Fetch(ctx context.Context, token string) (Usage, error) {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		e := &RateLimitError{}
-		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil {
-			e.RetryAfter = time.Duration(s) * time.Second
-		}
-		return Usage{}, e
+		return Usage{}, &RateLimitError{RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return Usage{}, errors.New("login expired — run Claude Code in this profile to refresh it")
+		return Usage{}, ErrUnauthorized
 	case resp.StatusCode != http.StatusOK:
 		return Usage{}, fmt.Errorf("usage API returned %s", resp.Status)
 	}

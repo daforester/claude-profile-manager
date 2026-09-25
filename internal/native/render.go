@@ -23,6 +23,13 @@ func LevelColor(pct float64) color.NRGBA {
 	}
 }
 
+// Fade makes an icon mostly transparent, for values that are out of date.
+func Fade(img *image.NRGBA) {
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = uint8(uint16(img.Pix[i]) * 2 / 5)
+	}
+}
+
 // Icon styles.
 const (
 	StyleBar     = "bar"

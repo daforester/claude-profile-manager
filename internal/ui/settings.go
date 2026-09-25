@@ -133,7 +133,7 @@ func (g *gui) showSettings() {
 			g.win.SetCloseIntercept(g.win.Hide)
 		case !tray.Checked && trayWas && g.trayOn:
 			g.trayOn = false
-			g.win.SetCloseIntercept(g.app.Quit)
+			g.win.SetCloseIntercept(g.quit)
 			dialog.ShowInformation("System tray", "The tray icon will be removed the next time Profile Manager starts. Closing the window now quits the app.", g.win)
 		}
 	}, g.win)

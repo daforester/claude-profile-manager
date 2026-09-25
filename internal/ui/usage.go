@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"math"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ type usageBar struct {
 	widget.BaseWidget
 	pct    float64
 	has    bool
+	stale  bool
 	height float32
 }
 
@@ -45,9 +47,26 @@ func (b *usageBar) Set(pct float64, has bool) {
 	b.Refresh()
 }
 
+// SetStale fades the fill to show the value is out of date.
+func (b *usageBar) SetStale(stale bool) {
+	if b.stale == stale {
+		return
+	}
+	b.stale = stale
+	b.Refresh()
+}
+
+func (b *usageBar) fillColor() color.NRGBA {
+	c := native.LevelColor(b.pct)
+	if b.stale {
+		c.A = 0x55
+	}
+	return c
+}
+
 func (b *usageBar) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
-	fill := canvas.NewRectangle(native.LevelColor(b.pct))
+	fill := canvas.NewRectangle(b.fillColor())
 	r := &usageBarRenderer{b: b, bg: bg, fill: fill}
 	r.Refresh()
 	return r
@@ -76,7 +95,7 @@ func (r *usageBarRenderer) MinSize() fyne.Size { return fyne.NewSize(40, r.b.hei
 func (r *usageBarRenderer) Refresh() {
 	r.bg.FillColor = theme.Color(theme.ColorNameInputBackground)
 	r.bg.CornerRadius = r.b.height / 2
-	r.fill.FillColor = native.LevelColor(r.b.pct)
+	r.fill.FillColor = r.b.fillColor()
 	r.fill.CornerRadius = r.b.height / 2
 	if r.b.has {
 		r.fill.Show()
@@ -181,6 +200,9 @@ func (g *gui) refreshProfileTrays() {
 		u := g.usageOf(p.ID)
 		v, has := u.Metric(g.settings.TrayMetric)
 		img := native.RenderIcon(g.settings.TrayIconStyle, v, has, parseHex(p.Color), size)
+		if u.Stale() {
+			native.Fade(img)
+		}
 		g.trayIcons.Set(p.ID, native.PNG(img), trayTooltip(p, u))
 		g.trayShown[p.ID] = true
 	}
@@ -201,6 +223,8 @@ func trayTooltip(p *profile.Profile, u usage.Usage) string {
 		parts = append(parts, fmt.Sprintf("week %.0f%%", u.Weekly.Utilization))
 	}
 	switch {
+	case len(parts) > 0 && u.Stale():
+		return fmt.Sprintf("%s — %s as of %s (%s)", p.Name, strings.Join(parts, ", "), ago(u.FetchedAt), staleReason(u))
 	case len(parts) > 0 && u.Session != nil && !u.Session.ResetsAt.IsZero():
 		return fmt.Sprintf("%s — %s (resets %s)", p.Name, strings.Join(parts, ", "), u.Session.ResetsAt.Local().Format("15:04"))
 	case len(parts) > 0:
@@ -227,6 +251,8 @@ func (g *gui) usageCard(p *profile.Profile) fyne.CanvasObject {
 		u := g.usageOf(p.ID)
 		setWindow(sessBar, sessText, u.Session)
 		setWindow(weekBar, weekText, u.Weekly)
+		sessBar.SetStale(u.Stale())
+		weekBar.SetStale(u.Stale())
 		status.SetText(usageStatus(u))
 	}
 	g.detailUsage = update
@@ -315,6 +341,8 @@ func usageStatus(u usage.Usage) string {
 	switch {
 	case u.NoLogin:
 		return "No Claude Code login in this profile — usage appears after you sign in to Claude Code here."
+	case u.LoginExpired && u.Has():
+		return "Login expired — open Claude Code in this profile to refresh it. Showing values from " + ago(u.FetchedAt) + "."
 	case u.Err != "" && u.Has():
 		return "Last refresh failed: " + u.Err + " (showing " + ago(u.FetchedAt) + " values)"
 	case u.Err != "":
@@ -327,6 +355,14 @@ func usageStatus(u usage.Usage) string {
 		s = "Plan: " + strings.ToUpper(u.Plan[:1]) + u.Plan[1:] + " · " + s
 	}
 	return s
+}
+
+// staleReason is a short note on why usage isn't updating.
+func staleReason(u usage.Usage) string {
+	if u.LoginExpired {
+		return "login expired"
+	}
+	return "not updating"
 }
 
 func ago(t time.Time) string {

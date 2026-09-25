@@ -128,9 +128,12 @@ func (p *popout) refresh() {
 		switch {
 		case u.Session != nil:
 			bar.Set(u.Session.Utilization, true)
+			bar.SetStale(u.Stale())
 			pct.SetText(fmt.Sprintf("%.0f%%", u.Session.Utilization))
 			d := "5-hour"
-			if !u.Session.ResetsAt.IsZero() {
+			if u.Stale() {
+				d = "As of " + ago(u.FetchedAt) + " · " + staleReason(u)
+			} else if !u.Session.ResetsAt.IsZero() {
 				d += " · resets " + resetText(u.Session.ResetsAt)
 			}
 			if u.Weekly != nil {
