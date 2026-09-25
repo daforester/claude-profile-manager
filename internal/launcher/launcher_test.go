@@ -84,7 +84,7 @@ func TestPOSIXScript(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.txt")
 	fake := filepath.Join(dir, "fake claude")
-	body := "#!/bin/sh\n{ pwd; echo \"CFG=$CLAUDE_CONFIG_DIR\"; echo \"FOO=$FOO\"; echo \"TOKEN=${ANTHROPIC_AUTH_TOKEN-unset}\"; for a in \"$@\"; do echo \"ARG=$a\"; done; } > " + out + "\n"
+	body := "#!/bin/sh\n{ pwd -P; echo \"CFG=$CLAUDE_CONFIG_DIR\"; echo \"FOO=$FOO\"; echo \"TOKEN=${ANTHROPIC_AUTH_TOKEN-unset}\"; for a in \"$@\"; do echo \"ARG=$a\"; done; } > " + out + "\n"
 	if err := os.WriteFile(fake, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
