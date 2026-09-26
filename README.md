@@ -41,6 +41,7 @@ cpm desktop <profile>                 start Claude Desktop for the profile
 cpm env <profile> [--shell S]         print a start command (powershell | cmd | posix)
 cpm create <name> [--copy-default]    create a profile
 cpm paths                             show data folder and detected tools
+cpm version                           print the version
 ```
 
 `<profile>` can be the name, its slug (`work-account`) or the ID. The GUI binary accepts the same commands, except `run`, which needs the console build.
@@ -98,7 +99,8 @@ The first build downloads modules, and `build.ps1`/`make` run `go mod tidy` to c
 - **Signing in to Claude Desktop (sign-in link routing):** Desktop signs in through your browser, which sends the result back as a `claude://` link. The OS has one handler for that scheme, normally the main install, so a profile window would never get its sign-in. With *Settings → Route Claude Desktop sign-in links* on (you're offered this the first time you launch Desktop), Profile Manager registers itself as the `claude://` handler. Each link goes to the profile whose Desktop you launched in the last 10 minutes; otherwise a small window asks which Claude Desktop should get it, including *Main Claude Desktop*. It delivers the link by running `claude.exe --user-data-dir=<profile> <link>`, and Electron passes that to the profile window that's already running.
   - Claude Desktop registers itself again every time it starts. On Windows, Profile Manager watches the registry key and takes the handler back immediately; elsewhere it re-checks every few seconds. **Profile Manager must be running (it stays in the tray) while you sign in.**
   - *Settings → Sign-in links → Diagnostics…* shows the registered handler, the command Windows will actually run, any Windows "default app" override, and the recent routing log (a `(received)` line means Windows called Profile Manager).
-  - Turning routing off restores the handler that was there before (Windows: `HKCU\Software\Classes\claude`; Linux: `xdg-mime`).
+  - Turning routing off restores the handler that was there before (Windows: `HKCU\Software\Classes\claude`; Linux: `xdg-mime`; macOS: the LaunchServices default).
+  - **macOS:** routing works when Profile Manager runs from its packaged `.app`, whose `Info.plist` declares `claude://` (`make package` or the release zip; `go run .` can't). macOS hands the link to the running app, starting it if needed.
   - **Linux:** Profile Manager writes `~/.local/share/applications/claude-profile-manager-links.desktop` (`MimeType=x-scheme-handler/claude`) and makes it the default with `xdg-mime`, or by editing `~/.config/mimeapps.list` when `xdg-utils` isn't installed. Browsers reach it through `xdg-open` or GIO. *Main Claude Desktop* runs the `.desktop` handler that was registered before, so native and Flatpak community builds both work. If you run Profile Manager as an AppImage, the entry points at the AppImage file. Inside a distrobox the entry runs Profile Manager through `distrobox-enter`, because the browser opens it on the host.
   - If Windows has a "default app" set for claude links, it can override this. Settings shows a warning and a *Windows default apps…* button so you can choose Claude Profile Manager there.
   - **Fallback:** click *Paste sign-in link…* on the profile and paste the `claude://` link copied from the browser's sign-in page.
@@ -121,5 +123,9 @@ internal/usage/            plan-usage API client and background monitor
 internal/native/           per-profile Windows tray icons, always-on-top, icon rendering
 internal/cli/              shared command-line implementation
 internal/settings/         app settings
+internal/appdir/           data folder location (CPM_HOME)
+internal/console/          console output for the windowed Windows build
+internal/urlevent/         receives claude:// links from macOS (Apple Events)
 internal/shellwords/       argument splitting/quoting
+scripts/                   macos-url-scheme.sh adds claude:// to the packaged .app
 ```
