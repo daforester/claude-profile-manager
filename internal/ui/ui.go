@@ -99,6 +99,7 @@ func Run(root string, store *profile.Store, st *settings.Settings) {
 	// the background.
 	a.Lifecycle().SetOnEnteredForeground(func() { g.reload(); g.refreshNewLogins() })
 	g.startLinkRouter()
+	g.listenForURLs()
 	g.startUsage()
 
 	g.reload()
