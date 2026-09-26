@@ -17,6 +17,7 @@ import (
 	"claude-profile-manager/internal/launcher"
 	"claude-profile-manager/internal/profile"
 	"claude-profile-manager/internal/settings"
+	"claude-profile-manager/internal/urlevent"
 )
 
 // linkReassertInterval is how often the running GUI checks that it still
@@ -142,6 +143,9 @@ func (g *gui) showRoutingSetup() {
 		"2.  In “How do you want to open this?”, choose Claude Profile Manager and tick “Always use this app” (or click “Always”).\n"+
 		"3.  A “Link routing works” window confirms it.\n\n"+
 		"If no picker appears, use “Default apps…”, find CLAUDE and choose Claude Profile Manager.", 520)
+	if runtime.GOOS != "windows" {
+		steps = wrapLabelWidth("Click “Test link”. A “Link routing works” window confirms that sign-in links reach Profile Manager.", 520)
+	}
 	test := widget.NewButtonWithIcon("Test link", theme.MediaPlayIcon(), func() {
 		if err := launcher.OpenTestLink(); err != nil {
 			dialog.ShowError(err, g.win)
@@ -245,35 +249,88 @@ func (g *gui) linkSettings() (fyne.CanvasObject, func()) {
 }
 
 // HandleURL is the entry point when the OS opens a claude:// link with this
-// executable. It forwards the link to the profile whose Desktop was launched
-// most recently, or asks which Claude Desktop should receive it.
+// executable (Windows, Linux). It forwards the link to the profile whose
+// Desktop was launched most recently, or asks which Claude Desktop should
+// receive it.
 func HandleURL(root string, store *profile.Store, st *settings.Settings, url string) {
 	l := &launcher.Launcher{Root: root, Settings: st}
 	launcher.LogRoute(root, "(received)", url)
-	if launcher.IsRoutingTest(url) {
-		showRoutingConfirmed()
+	if !launcher.IsRoutingTest(url) && routeAutomatically(l, store, url) {
 		return
 	}
-	if id, ok := launcher.TakeRecentDesktopLaunch(root); ok {
+	a := app.NewWithID(AppID)
+	a.Settings().SetTheme(newTheme())
+	a.SetIcon(fyne.NewStaticResource("icon.png", iconPNG))
+	if launcher.IsRoutingTest(url) {
+		showRoutingConfirmed(a, a.Quit)
+	} else {
+		showLinkChooser(a, l, store, url, a.Quit)
+	}
+	a.Run()
+}
+
+// openURL handles a claude:// link delivered to the running GUI (macOS
+// sends links to the running app instead of starting a new process).
+func (g *gui) openURL(url string) {
+	launcher.LogRoute(g.root, "(received)", url)
+	if !launcher.IsClaudeURL(url) {
+		return
+	}
+	if launcher.IsRoutingTest(url) {
+		showRoutingConfirmed(g.app, nil)
+		return
+	}
+	if routeAutomatically(g.launcher, g.store, url) {
+		return
+	}
+	showLinkChooser(g.app, g.launcher, g.store, url, nil)
+}
+
+// listenForURLs routes the links macOS hands to the running app.
+func (g *gui) listenForURLs() {
+	events := urlevent.Events()
+	if events == nil {
+		return
+	}
+	go func() {
+		for url := range events {
+			fyne.Do(func() { g.openURL(url) })
+		}
+	}()
+}
+
+// routeAutomatically delivers url without asking when possible: to the
+// profile whose Desktop was just launched, or to the main install when there
+// are no profiles. It reports whether the link was delivered.
+func routeAutomatically(l *launcher.Launcher, store *profile.Store, url string) bool {
+	if id, ok := launcher.TakeRecentDesktopLaunch(l.Root); ok {
 		if p, err := store.Get(id); err == nil {
 			if err := l.DeliverURL(p, url); err == nil {
-				return
+				return true
 			}
 		}
 	}
-	profiles := store.List()
-	if len(profiles) == 0 {
+	if len(store.List()) == 0 {
 		_ = l.DeliverURL(nil, url)
-		return
+		return true
+	}
+	return false
+}
+
+// showLinkChooser asks which Claude Desktop should receive url. done runs
+// once the window is finished with; nil just closes the window.
+func showLinkChooser(a fyne.App, l *launcher.Launcher, store *profile.Store, url string, done func()) {
+	w := a.NewWindow("Open Claude link")
+	w.SetIcon(a.Icon())
+	finish := func() {
+		if done != nil {
+			done()
+		} else {
+			w.Close()
+		}
 	}
 
-	a := app.NewWithID(AppID)
-	a.Settings().SetTheme(newTheme())
-	icon := fyne.NewStaticResource("icon.png", iconPNG)
-	a.SetIcon(icon)
-	w := a.NewWindow("Open Claude link")
-	w.SetIcon(icon)
-
+	profiles := store.List()
 	// Most recently used first.
 	sort.SliceStable(profiles, func(i, j int) bool { return profiles[i].LastUsedAt.After(profiles[j].LastUsedAt) })
 	errLabel := widget.NewLabel("")
@@ -284,7 +341,7 @@ func HandleURL(root string, store *profile.Store, st *settings.Settings, url str
 			errLabel.SetText(err.Error())
 			return
 		}
-		a.Quit()
+		finish()
 	}
 	buttons := container.NewVBox()
 	for _, p := range profiles {
@@ -298,12 +355,13 @@ func HandleURL(root string, store *profile.Store, st *settings.Settings, url str
 		buttons.Add(b)
 	}
 	mainBtn := widget.NewButtonWithIcon("Main Claude Desktop (not a profile)", theme.ComputerIcon(), func() { send(nil) })
-	cancel := widget.NewButton("Ignore link", func() { a.Quit() })
+	cancel := widget.NewButton("Ignore link", finish)
 	header := wrapLabelWidth(fmt.Sprintf("Which Claude Desktop should receive this link?\n%s", shortURL(url)), 420)
 	w.SetContent(container.NewPadded(container.NewVBox(header, buttons, widget.NewSeparator(), mainBtn, errLabel, container.NewHBox(cancel))))
 	w.Resize(fyne.NewSize(460, 0))
 	w.CenterOnScreen()
-	w.ShowAndRun()
+	w.Show()
+	w.RequestFocus()
 }
 
 func shortURL(u string) string {
@@ -332,21 +390,25 @@ func (g *gui) showLinkDiagnostics() {
 	d.Show()
 }
 
-// showRoutingConfirmed is shown when the setup test link reaches us.
-func showRoutingConfirmed() {
-	a := app.NewWithID(AppID)
-	a.Settings().SetTheme(newTheme())
-	icon := fyne.NewStaticResource("icon.png", iconPNG)
-	a.SetIcon(icon)
+// showRoutingConfirmed is shown when the setup test link reaches us. done
+// runs when it is dismissed; nil just closes the window.
+func showRoutingConfirmed(a fyne.App, done func()) {
 	w := a.NewWindow("Link routing works")
-	w.SetIcon(icon)
+	w.SetIcon(a.Icon())
 	msg := widget.NewLabel("✓ Claude Profile Manager received the test link.\n\nClaude Desktop sign-ins will now go to the profile you launched.")
 	msg.Wrapping = fyne.TextWrapWord
 	msg.Importance = widget.SuccessImportance
-	ok := widget.NewButton("OK", func() { a.Quit() })
+	ok := widget.NewButton("OK", func() {
+		if done != nil {
+			done()
+		} else {
+			w.Close()
+		}
+	})
 	ok.Importance = widget.HighImportance
 	w.SetContent(container.NewPadded(container.NewVBox(msg, container.NewCenter(ok))))
 	w.Resize(fyne.NewSize(420, 0))
 	w.CenterOnScreen()
-	w.ShowAndRun()
+	w.Show()
+	w.RequestFocus()
 }

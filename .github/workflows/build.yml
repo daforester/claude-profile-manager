@@ -57,7 +57,8 @@ jobs:
           mkdir -p dist
           case "${{ matrix.target }}" in
             windows) mv "Claude Profile Manager.exe" dist/claude-profile-manager.exe ;;
-            darwin)  ditto -c -k --keepParent "Claude Profile Manager.app" dist/claude-profile-manager-macos.zip ;;
+            darwin)  scripts/macos-url-scheme.sh "Claude Profile Manager.app"
+                     ditto -c -k --keepParent "Claude Profile Manager.app" dist/claude-profile-manager-macos.zip ;;
             linux)   mv *.tar.xz dist/claude-profile-manager-linux.tar.xz ;;
           esac
 
