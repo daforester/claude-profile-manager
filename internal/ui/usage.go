@@ -342,7 +342,7 @@ func usageStatus(u usage.Usage) string {
 	case u.NoLogin:
 		return "No Claude Code login in this profile — usage appears after you sign in to Claude Code here."
 	case u.LoginExpired && u.Has():
-		return "Login expired — open Claude Code in this profile to refresh it. Showing values from " + ago(u.FetchedAt) + "."
+		return "Login expired and couldn't be renewed — sign in to Claude Code in this profile again. Showing values from " + ago(u.FetchedAt) + "."
 	case u.Err != "" && u.Has():
 		return "Last refresh failed: " + u.Err + " (showing " + ago(u.FetchedAt) + " values)"
 	case u.Err != "":

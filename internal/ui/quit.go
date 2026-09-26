@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"fyne.io/systray"
+
+	"claude-profile-manager/internal/usage"
 )
 
 // quitTimeout is how long Fyne gets to shut down before the process exits
@@ -19,6 +21,7 @@ const quitTimeout = 3 * time.Second
 // Tray icons are therefore removed up front, and a watchdog exits the process
 // (logging where it was stuck) if Fyne hasn't finished in time.
 func (g *gui) quit() {
+	usage.SaveUnsaved()
 	if g.trayIcons != nil {
 		g.trayIcons.Close()
 	}

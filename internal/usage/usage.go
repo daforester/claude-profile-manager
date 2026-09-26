@@ -19,8 +19,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -114,17 +112,14 @@ var ErrNoLogin = errors.New("no Claude Code login in this profile")
 
 // ReadCredentials loads the profile's Claude Code OAuth token.
 func ReadCredentials(p *profile.Profile) (*Credentials, error) {
-	var raw []byte
-	var err error
-	if runtime.GOOS == "darwin" {
-		raw, err = keychain(p.ConfigDir())
-	}
-	if runtime.GOOS != "darwin" || err != nil {
-		raw, err = os.ReadFile(filepath.Join(p.ConfigDir(), ".credentials.json"))
-	}
+	stored, err := readStored(p)
 	if err != nil {
-		return nil, ErrNoLogin
+		return nil, err
 	}
+	return parseCredentials(stored.raw)
+}
+
+func parseCredentials(raw []byte) (*Credentials, error) {
 	var f credFile
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return nil, fmt.Errorf("reading credentials: %w", err)

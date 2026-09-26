@@ -26,9 +26,9 @@ type Monitor struct {
 	// notBefore holds the end of a server rate limit; manual refreshes
 	// don't bypass it.
 	notBefore map[string]time.Time
-	// expiredToken is the fingerprint of a token that has expired or was
-	// rejected. The API answers those with 429s, so it isn't called again
-	// until Claude Code stores a different token.
+	// expiredToken is the fingerprint of a token that was rejected and
+	// couldn't be renewed. Nothing is called again until Claude Code stores
+	// a different token.
 	expiredToken map[string]string
 	wake         chan string // profile ID to refresh now ("" = all)
 }
@@ -95,7 +95,13 @@ func (m *Monitor) pollDue(ctx context.Context, only string) {
 		due := m.nextDue[p.ID]
 		expired, waiting := m.expiredToken[p.ID]
 		m.mu.Unlock()
-		if now.Before(due) && !(waiting && m.tokenChanged(p, expired)) {
+		if waiting {
+			// The login couldn't be renewed; nothing to do until the user
+			// signs in again and a different token appears.
+			if !m.tokenChanged(p, expired) {
+				continue
+			}
+		} else if now.Before(due) {
 			continue
 		}
 		m.pollOne(ctx, p)
@@ -130,21 +136,20 @@ func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
 		next = Usage{NoLogin: true}
 	case err != nil:
 		next.Err = err.Error()
-	case creds.Expired(time.Now()):
-		// Calling the API with an expired token only earns a rate limit.
-		loginExpired(creds)
 	default:
-		cctx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		u, ferr := Fetch(cctx, creds.AccessToken)
+		cctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+		var u Usage
+		var ferr error
+		u, creds, ferr = fetchRenewing(cctx, p, creds)
 		cancel()
 		var rl *RateLimitError
 		switch {
 		case ferr == nil:
 			u.Plan = creds.SubscriptionType
 			next = u
-		case errors.Is(ferr, ErrUnauthorized), errors.As(ferr, &rl) && creds.Expired(time.Now()):
+		case errors.Is(ferr, ErrUnauthorized):
 			loginExpired(creds)
-		case rl != nil:
+		case errors.As(ferr, &rl):
 			m.mu.Lock()
 			b := m.backoff[p.ID]*2 + time.Minute
 			if b < interval {
@@ -190,6 +195,31 @@ func (m *Monitor) pollOne(ctx context.Context, p *profile.Profile) {
 	if m.onUpdate != nil {
 		m.onUpdate(p.ID, next)
 	}
+}
+
+// fetchRenewing fetches usage, first renewing the login if the access token
+// has expired (calling the API with an expired token only earns a rate
+// limit), or once more if the API rejects a token that looked valid. It
+// returns the credentials it ended up using.
+func fetchRenewing(ctx context.Context, p *profile.Profile, creds *Credentials) (Usage, *Credentials, error) {
+	renewed := false
+	if creds.Expired(time.Now()) {
+		c, err := Renew(ctx, p)
+		if err != nil {
+			return Usage{}, creds, err
+		}
+		creds, renewed = c, true
+	}
+	u, err := Fetch(ctx, creds.AccessToken)
+	if errors.Is(err, ErrUnauthorized) && !renewed {
+		c, rerr := Renew(ctx, p)
+		if rerr != nil {
+			return Usage{}, creds, err
+		}
+		creds = c
+		u, err = Fetch(ctx, creds.AccessToken)
+	}
+	return u, creds, err
 }
 
 func (m *Monitor) cachePath() string { return filepath.Join(m.root, "usage-cache.json") }
