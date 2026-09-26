@@ -140,12 +140,32 @@ func quoteExecArg(s string) string {
 	return b.String()
 }
 
+// containerEnvFile is where podman marks a container (a variable for tests).
+var containerEnvFile = "/run/.containerenv"
+
+// containerPrefix is the command that runs a program inside the current
+// distrobox from the host. The entry lands in ~/.local/share/applications,
+// which the host shares, but the host's browser opens it on the host, where
+// the container's binary doesn't exist; distrobox-export wraps Exec the same
+// way. Empty outside a distrobox.
+func containerPrefix() []string {
+	enter, name := os.Getenv("DISTROBOX_ENTER_PATH"), os.Getenv("CONTAINER_ID")
+	if enter == "" || name == "" || !fileExists(containerEnvFile) {
+		return nil
+	}
+	return []string{enter, "-n", name, "--"}
+}
+
 func routerDesktopEntry(exe string) string {
+	var cmd []string
+	for _, a := range append(containerPrefix(), exe) {
+		cmd = append(cmd, quoteExecArg(a))
+	}
 	return `[Desktop Entry]
 Type=Application
 Name=Claude Profile Manager (link router)
 Comment=Routes Claude Desktop sign-in links to the right profile
-Exec=` + quoteExecArg(exe) + ` handle-url %u
+Exec=` + strings.Join(cmd, " ") + ` handle-url %u
 MimeType=` + schemeMime + `;
 NoDisplay=true
 Terminal=false

@@ -27,10 +27,13 @@ func isolateXDG(t *testing.T) (data, config string) {
 	t.Setenv("DESKTOP_SESSION", "")
 	t.Setenv("XDG_SESSION_DESKTOP", "")
 	t.Setenv("APPIMAGE", "")
+	t.Setenv("DISTROBOX_ENTER_PATH", "")
+	t.Setenv("CONTAINER_ID", "")
 	return data, config
 }
 
 func TestExecQuotingRoundTrip(t *testing.T) {
+	isolateXDG(t)
 	for _, exe := range []string{
 		"/usr/local/bin/claude-profile-manager",
 		"/opt/Claude Profile Manager/claude-profile-manager",
@@ -58,6 +61,44 @@ func TestExecQuotingRoundTrip(t *testing.T) {
 				t.Errorf("desktop-file-validate rejected entry for %q: %s", exe, out)
 			}
 		}
+	}
+}
+
+// In a distrobox the host's browser opens the entry, so it must enter the
+// container before running our binary.
+func TestRouterEntryInDistrobox(t *testing.T) {
+	isolateXDG(t)
+	marker := filepath.Join(t.TempDir(), ".containerenv")
+	if err := os.WriteFile(marker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := containerEnvFile
+	containerEnvFile = marker
+	t.Cleanup(func() { containerEnvFile = old })
+	enter := "/home/u/.var/app/x/distrobox-enter"
+	t.Setenv("DISTROBOX_ENTER_PATH", enter)
+	t.Setenv("CONTAINER_ID", "Debian")
+
+	path := filepath.Join(t.TempDir(), "x.desktop")
+	if err := os.WriteFile(path, []byte(routerDesktopEntry("/usr/local/bin/cpm")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v, err := desktopExec(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, err := expandExec(v, "claude://login?code=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{enter, "-n", "Debian", "--", "/usr/local/bin/cpm", "handle-url", "claude://login?code=1"}
+	if !reflect.DeepEqual(args, want) {
+		t.Errorf("got %q\nwant %q", args, want)
+	}
+
+	containerEnvFile = filepath.Join(t.TempDir(), "absent")
+	if p := containerPrefix(); p != nil {
+		t.Errorf("prefix without container marker: %q", p)
 	}
 }
 
