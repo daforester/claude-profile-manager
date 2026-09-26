@@ -113,7 +113,7 @@ func (g *gui) editProfile(existing *profile.Profile) {
 	if !creating && (p.IsolateHome || p.KeepInheritedAuth || p.ClaudeConfigDir != "" || p.DesktopDataDir != "") {
 		acc.Open(0)
 	}
-	content := container.NewVScroll(container.NewVBox(form, acc))
+	content := vscroll(container.NewVBox(form, acc))
 
 	title := "Edit profile"
 	confirm := "Save"

@@ -68,7 +68,7 @@ func (g *gui) newPopout() *popout {
 	refresh.Importance = widget.LowImportance
 	header := container.NewHBox(p.pin, layout.NewSpacer(), refresh, choose)
 
-	p.win.SetContent(container.NewPadded(container.NewBorder(header, nil, nil, nil, container.NewVScroll(p.rows))))
+	p.win.SetContent(container.NewPadded(container.NewBorder(header, nil, nil, nil, vscroll(p.rows))))
 	p.win.Resize(fyne.NewSize(320, 200))
 	p.win.SetCloseIntercept(func() { p.close() })
 	return p
@@ -181,7 +181,7 @@ func (p *popout) chooseProfiles() {
 		c.SetChecked(g.settings.PopoutShows(prof.ID))
 		checks.Add(c)
 	}
-	sc := container.NewVScroll(checks)
+	sc := vscroll(checks)
 	sc.SetMinSize(fyne.NewSize(220, float32(min(40*len(g.profiles), 240))))
 	dialog.NewCustom("Profiles in pop-out", "Done", sc, p.win).Show()
 }

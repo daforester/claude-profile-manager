@@ -172,6 +172,7 @@ func (g *gui) build() fyne.CanvasObject {
 		widget.NewToolbarAction(theme.GridIcon(), g.togglePopout),
 		widget.NewToolbarAction(theme.SettingsIcon(), g.showSettings),
 		widget.NewToolbarAction(theme.HelpIcon(), g.showAbout),
+		widget.NewToolbarAction(theme.LogoutIcon(), g.quit),
 	)
 	heading := widget.NewLabelWithStyle("Profiles", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	left := container.NewBorder(container.NewVBox(toolbar, heading), nil, nil, nil, g.list)
@@ -366,7 +367,7 @@ func (g *gui) profileView(p *profile.Profile) fyne.CanvasObject {
 		actions,
 		tip,
 	)
-	return container.NewVScroll(body)
+	return vscroll(body)
 }
 
 func (g *gui) launchCLI(p *profile.Profile, dir string) {

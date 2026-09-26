@@ -4,6 +4,8 @@ import (
 	"image/color"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -23,6 +25,15 @@ func (t accentTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Col
 		return color.NRGBA{R: accent.R, G: accent.G, B: accent.B, A: 0x40}
 	}
 	return t.Theme.Color(n, v)
+}
+
+// vscroll wraps o in a vertical scroller with a right-hand gutter the width
+// of the scrollbar. Fyne overlays its scrollbar on the content, so without
+// the gutter it covers whatever sits at the right edge.
+func vscroll(o fyne.CanvasObject) *container.Scroll {
+	gutter := canvas.NewRectangle(color.Transparent)
+	gutter.SetMinSize(fyne.NewSize(theme.ScrollBarSize(), 0))
+	return container.NewVScroll(container.NewBorder(nil, nil, nil, gutter, o))
 }
 
 // parseHex converts #RRGGBB to a colour, falling back to the accent.

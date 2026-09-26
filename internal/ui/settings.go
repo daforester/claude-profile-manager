@@ -104,7 +104,7 @@ func (g *gui) showSettings() {
 		content.Add(g.portableSection())
 	}
 
-	d := dialog.NewCustomConfirm("Settings", "Save", "Cancel", container.NewVScroll(content), func(ok bool) {
+	d := dialog.NewCustomConfirm("Settings", "Save", "Cancel", vscroll(content), func(ok bool) {
 		if !ok {
 			return
 		}

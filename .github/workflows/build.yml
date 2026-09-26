@@ -41,13 +41,19 @@ jobs:
       - name: Install fyne CLI
         run: go install fyne.io/tools/cmd/fyne@latest
 
+      # --release already adds -s -w -trimpath. no_emoji drops Fyne's 4 MB
+      # bundled emoji font (the UI uses none), -Os shrinks the cgo code, and
+      # fyne lifts -ldflags out of GOFLAGS to stamp the version.
       - name: Package GUI
         shell: bash
+        env:
+          CGO_CFLAGS: "-Os"
         run: |
           VERSION=$(git describe --tags --always)
           APPVER=$(echo "$VERSION" | sed -E 's/^v//; s/-.*$//')
           [[ "$APPVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || APPVER=0.1.0
-          fyne package --release --target ${{ matrix.target }} --app-version "$APPVER" --name "Claude Profile Manager"
+          export GOFLAGS="-ldflags=-X=claude-profile-manager/internal/cli.Version=$VERSION"
+          fyne package --release --target ${{ matrix.target }} --tags no_emoji --app-version "$APPVER" --name "Claude Profile Manager"
           mkdir -p dist
           case "${{ matrix.target }}" in
             windows) mv "Claude Profile Manager.exe" dist/claude-profile-manager.exe ;;
@@ -61,7 +67,36 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           EXT=""; [ "${{ matrix.target }}" = windows ] && EXT=.exe
-          go build -ldflags "-s -w -X claude-profile-manager/internal/cli.Version=$(git describe --tags --always)" -o dist/cpm-${{ matrix.target }}$EXT ./cmd/cpm
+          go build -trimpath -ldflags "-s -w -X claude-profile-manager/internal/cli.Version=$(git describe --tags --always)" -o dist/cpm-${{ matrix.target }}$EXT ./cmd/cpm
+
+      - name: Record uncompressed sizes
+        if: matrix.target == 'windows'
+        shell: bash
+        run: for f in dist/*.exe; do echo "$(basename "$f") $(stat -c %s "$f")"; done > exe-sizes.txt
+
+      # UPX packs the exes into self-extracting ones (~70% smaller); they
+      # unpack in memory at launch, so nothing changes for the user.
+      - name: Compress Windows executables
+        if: matrix.target == 'windows'
+        uses: crazy-max/ghaction-upx@v3
+        with:
+          version: latest
+          files: dist/*.exe
+          args: --best --lzma
+
+      - name: Report UPX compression
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          {
+            echo "### UPX compression"
+            echo "| File | Before | After | Saved |"
+            echo "|---|---:|---:|---:|"
+            while read -r name before; do
+              after=$(stat -c %s "dist/$name")
+              awk -v n="$name" -v b="$before" -v a="$after" 'BEGIN { printf "| %s | %.1f MB | %.1f MB | %.0f%% |\n", n, b/1048576, a/1048576, (1-a/b)*100 }'
+            done < exe-sizes.txt
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
