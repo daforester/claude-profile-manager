@@ -26,9 +26,11 @@ run: deps
 	go run .
 
 # Native app bundle (.app on macOS, .tar.xz with .desktop file on Linux).
+# On macOS the .app also declares the claude:// scheme for sign-in routing.
 # Requires: go install fyne.io/tools/cmd/fyne@latest
 package: deps
 	fyne package --release --app-version $(patsubst v%,%,$(VERSION)) --name "Claude Profile Manager"
+	if [ "$$(uname)" = Darwin ]; then scripts/macos-url-scheme.sh "Claude Profile Manager.app"; fi
 
 clean:
 	rm -rf $(DIST) *.app *.tar.xz
