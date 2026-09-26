@@ -163,7 +163,7 @@ func LinkDiagnostics(root string) string {
 	if st.Warning != "" {
 		fmt.Fprintf(&b, "WARNING:                  %s\n", st.Warning)
 	}
-	b.WriteString(platformDiagnostics())
+	b.WriteString(platformDiagnostics(root))
 	fmt.Fprintf(&b, "Replaced handler (backup): %s\n", readBackup(root))
 	if data, err := os.ReadFile(markerPath(root)); err == nil {
 		var m desktopLaunch
