@@ -25,7 +25,7 @@ func OpenDefaultAppsSettings() error { return errors.New("not supported on macOS
 
 func mainHandlerCommand(root, url string) []string { return nil }
 
-func platformDiagnostics() string {
+func platformDiagnostics(string) string {
 	return "Automatic routing is not available on macOS; use Paste sign-in link.\n"
 }
 

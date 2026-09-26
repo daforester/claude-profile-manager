@@ -211,7 +211,7 @@ func mainHandlerCommand(root, url string) []string {
 	return nil
 }
 
-func platformDiagnostics() string {
+func platformDiagnostics(string) string {
 	id := bundleID()
 	if id == "" {
 		id = "(none: not running from the .app bundle)"
