@@ -213,7 +213,7 @@ func effectiveCommand(what uintptr) string {
 	return syscall.UTF16ToString(buf)
 }
 
-func platformDiagnostics() string {
+func platformDiagnostics(string) string {
 	const assocstrCommand, assocstrFriendlyAppName = 1, 4
 	var b strings.Builder
 	fmt.Fprintf(&b, "Windows will run:         %s\n", effectiveCommand(assocstrCommand))
