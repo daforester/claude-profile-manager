@@ -31,7 +31,7 @@ jobs:
       - name: Linux build tools
         if: matrix.target == 'linux'
         run: |
-          dnf -y install git gcc pkgconf-pkg-config tar xz findutils \
+          dnf -y install git gcc pkgconf-pkg-config tar xz findutils file \
             mesa-libGL-devel libX11-devel libXcursor-devel libXrandr-devel \
             libXinerama-devel libXi-devel libXxf86vm-devel wayland-devel libxkbcommon-devel
 
