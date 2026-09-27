@@ -1,0 +1,46 @@
+<!--
+  Windows installer (WiX Toolset v5), built by CI:
+    wix build packaging/windows/claude-profile-manager.wxs -arch x64
+      -d Version=1.2.3 -d Dist=dist -o dist/claude-profile-manager.msi
+
+  Installs both executables into Program Files, adds a Start menu shortcut,
+  and puts the install folder on PATH so `cpm` works from any terminal.
+  UpgradeCode must never change: it is how new versions replace old ones.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Claude Profile Manager"
+           Manufacturer="Claude Profile Manager"
+           Version="$(Version)"
+           UpgradeCode="48d3e425-0675-4bc0-8f47-c802e36db9d5"
+           Scope="perMachine">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Claude Profile Manager is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon.exe" SourceFile="$(Dist)\claude-profile-manager.exe" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.exe" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/daforester/claude-profile-manager" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Claude Profile Manager">
+        <Component Id="App">
+          <File Id="AppExe" Source="$(Dist)\claude-profile-manager.exe" KeyPath="yes">
+            <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder"
+                      Name="Claude Profile Manager" Description="Keep several Claude accounts signed in at once"
+                      WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.exe" Advertise="yes" />
+          </File>
+        </Component>
+        <Component Id="Cli">
+          <File Id="CpmExe" Source="$(Dist)\cpm-windows.exe" Name="cpm.exe" KeyPath="yes" />
+          <Environment Id="PathEntry" Name="PATH" Value="[INSTALLFOLDER]" Part="last"
+                       Action="set" System="yes" Permanent="no" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main">
+      <ComponentRef Id="App" />
+      <ComponentRef Id="Cli" />
+    </Feature>
+  </Package>
+</Wix>

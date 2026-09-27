@@ -16,10 +16,25 @@ jobs:
             target: windows
           - os: macos-latest
             target: darwin
+          # Linux builds in AlmaLinux 8 so the binary needs only glibc 2.28
+          # and runs on every mainstream distro from 2018 on (RHEL 8,
+          # Debian 10, Ubuntu 20.04, openSUSE Leap 15, ...). A build on a
+          # current Ubuntu would need that Ubuntu's much newer glibc.
           - os: ubuntu-latest
             target: linux
+            container: almalinux:8
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
+      # Before checkout: git is needed for the full history `git describe`
+      # uses, and the rest to build the GUI (GLFW, OpenGL, X11, Wayland).
+      - name: Linux build tools
+        if: matrix.target == 'linux'
+        run: |
+          dnf -y install git gcc pkgconf-pkg-config tar xz findutils \
+            mesa-libGL-devel libX11-devel libXcursor-devel libXrandr-devel \
+            libXinerama-devel libXi-devel libXxf86vm-devel wayland-devel libxkbcommon-devel
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -28,9 +43,23 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Linux GUI dependencies
-        if: matrix.target == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+      # VERSION stamps the binaries (e.g. v1.2.3-4-gabcdef). APPVER is the
+      # numeric version installers need (1.2.3) and PKG_RELEASE counts
+      # commits since that tag, so builds between releases still upgrade
+      # cleanly (1.2.3-1 for the tag itself, then 1.2.3-2, ...).
+      - name: Version
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$PWD"
+          VERSION=$(git describe --tags --always)
+          APPVER=$(echo "$VERSION" | sed -E 's/^v//; s/-.*$//')
+          [[ "$APPVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || APPVER=0.1.0
+          if DESC=$(git describe --tags --long --match 'v*' 2>/dev/null); then
+            N=$(echo "$DESC" | sed -E 's/^.*-([0-9]+)-g[0-9a-f]+$/\1/')
+          else
+            N=$(git rev-list --count HEAD)
+          fi
+          { echo "VERSION=$VERSION"; echo "APPVER=$APPVER"; echo "PKG_RELEASE=$((N + 1))"; } >> "$GITHUB_ENV"
 
       - name: Resolve modules
         run: go mod tidy
@@ -49,9 +78,6 @@ jobs:
         env:
           CGO_CFLAGS: "-Os"
         run: |
-          VERSION=$(git describe --tags --always)
-          APPVER=$(echo "$VERSION" | sed -E 's/^v//; s/-.*$//')
-          [[ "$APPVER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || APPVER=0.1.0
           export GOFLAGS="-ldflags=-X=claude-profile-manager/internal/cli.Version=$VERSION"
           fyne package --release --target ${{ matrix.target }} --tags no_emoji --app-version "$APPVER" --name "Claude Profile Manager"
           mkdir -p dist
@@ -68,7 +94,29 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           EXT=""; [ "${{ matrix.target }}" = windows ] && EXT=.exe
-          go build -trimpath -ldflags "-s -w -X claude-profile-manager/internal/cli.Version=$(git describe --tags --always)" -o dist/cpm-${{ matrix.target }}$EXT ./cmd/cpm
+          go build -trimpath -ldflags "-s -w -X claude-profile-manager/internal/cli.Version=$VERSION" -o dist/cpm-${{ matrix.target }}$EXT ./cmd/cpm
+
+      # .deb, .rpm (Fedora, RHEL, openSUSE, ...), Arch .pkg.tar.zst and an
+      # AppImage, all from the binaries built above.
+      - name: Linux packages
+        if: matrix.target == 'linux'
+        shell: bash
+        run: |
+          mkdir -p stage "$RUNNER_TEMP/fyne" "$RUNNER_TEMP/bin"
+          tar -xJf dist/claude-profile-manager-linux.tar.xz -C "$RUNNER_TEMP/fyne"
+          install -m 755 "$(find "$RUNNER_TEMP/fyne" -path '*/bin/*' -type f | head -1)" stage/claude-profile-manager
+          install -m 755 dist/cpm-linux stage/cpm
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+          curl -fsSL -o "$RUNNER_TEMP/bin/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/bin/appimagetool"
+          PATH="$RUNNER_TEMP/bin:$PATH" packaging/linux/build-packages.sh "$APPVER" "$PKG_RELEASE"
+
+      # Drag-to-Applications .dmg and an installer .pkg (which also puts
+      # cpm on the PATH).
+      - name: macOS installers
+        if: matrix.target == 'darwin'
+        run: packaging/macos/build-installers.sh "Claude Profile Manager.app" dist/cpm-darwin "$APPVER"
 
       - name: Record uncompressed sizes
         if: matrix.target == 'windows'
@@ -98,6 +146,18 @@ jobs:
               awk -v n="$name" -v b="$before" -v a="$after" 'BEGIN { printf "| %s | %.1f MB | %.1f MB | %.0f%% |\n", n, b/1048576, a/1048576, (1-a/b)*100 }'
             done < exe-sizes.txt
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # MSI installer (after UPX, so it carries the compressed exes). WiX 5
+      # is pinned: later versions need a licence acceptance step.
+      - name: Windows installer
+        if: matrix.target == 'windows'
+        shell: bash
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          wix build packaging/windows/claude-profile-manager.wxs -arch x64 \
+            -d Version="$APPVER" -d Dist=dist -o dist/claude-profile-manager-windows.msi
+          rm -f dist/*.wixpdb
 
       - uses: actions/upload-artifact@v4
         with:

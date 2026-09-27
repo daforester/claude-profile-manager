@@ -47,11 +47,8 @@ install: build cli
 	install -Dm755 $(DIST)/cpm $(PREFIX)/bin/cpm
 	install -Dm644 assets/icon.png $(ICONDIR)/$(APPID).png
 	mkdir -p $(APPSDIR)
-	printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Claude Profile Manager' \
-		'Comment=Keep several Claude accounts signed in at once' \
-		'Exec=$(PREFIX)/bin/claude-profile-manager' 'Icon=$(APPID)' \
-		'Categories=Utility;' 'StartupWMClass=Claude Profile Manager' \
-		> $(APPSDIR)/$(APPID).desktop
+	sed 's|^Exec=.*|Exec=$(PREFIX)/bin/claude-profile-manager|' \
+		packaging/linux/$(APPID).desktop > $(APPSDIR)/$(APPID).desktop
 	@# Refresh an existing icon cache; creating one would hide icons that
 	@# other apps add later without updating it.
 	@if [ -f $(PREFIX)/share/icons/hicolor/icon-theme.cache ] && command -v gtk-update-icon-cache >/dev/null; then \

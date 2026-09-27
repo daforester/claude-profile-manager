@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Claude Profile Manager
+Comment=Keep several Claude accounts signed in at once
+Exec=claude-profile-manager
+Icon=io.github.claudeprofilemanager
+Categories=Utility;
+StartupWMClass=Claude Profile Manager

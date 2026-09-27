@@ -49,6 +49,26 @@ cpm version                           print the version
 
 Tip for Windows shortcuts: set the target to `cpm.exe desktop work` or `cpm.exe open work`.
 
+## Installing
+
+Each [release](https://github.com/daforester/claude-profile-manager/releases) has:
+
+| System | File | Install with |
+|---|---|---|
+| Windows | `claude-profile-manager-windows.msi` | double-click; adds a Start menu entry and puts `cpm` on `PATH` |
+| macOS | `claude-profile-manager-macos.dmg` | open and drag the app to Applications |
+| macOS | `claude-profile-manager-macos.pkg` | double-click; installs the app and `cpm` (in `/usr/local/bin`) |
+| Debian, Ubuntu, Mint, Pop!_OS, … | `claude-profile-manager_<version>_amd64.deb` | `sudo apt install ./<file>.deb` |
+| Fedora, RHEL / Alma / Rocky, openSUSE, Mageia, … | `claude-profile-manager-<version>.x86_64.rpm` | `sudo dnf install ./<file>.rpm` (openSUSE: `sudo zypper install ./<file>.rpm`) |
+| Arch, Manjaro, EndeavourOS, … | `claude-profile-manager-<version>-x86_64.pkg.tar.zst` | `sudo pacman -U <file>.pkg.tar.zst` |
+| Any other Linux | `Claude_Profile_Manager-<version>-x86_64.AppImage` | `chmod +x` it and run; `<file>.AppImage cpm list` runs the CLI |
+
+Plain executables (`.exe`, `.zip`, `.tar.xz` and `cpm-*`) are there too.
+
+The Linux build needs glibc 2.28 or newer (every mainstream distro since 2018). Musl-based distros such as Alpine aren't supported. Flatpak and Snap aren't offered because their sandboxes would stop the app launching terminals and Claude Desktop and managing your Claude config folders.
+
+The Windows and macOS installers aren't code-signed yet. Windows SmartScreen may warn: choose *More info → Run anyway*. On macOS, right-click the app or installer and choose *Open*, or allow it under *System Settings → Privacy & Security*.
+
 ## Where data lives
 
 | OS | Default |
@@ -96,7 +116,7 @@ make install                  # ~/.local: binaries, icon and app launcher
 
 Linux executables can't carry an icon, so menus and docks take it from the launcher (`io.github.claudeprofilemanager.desktop`) and the icon installed under the same name. `make install` puts both in `~/.local`; use `sudo make install PREFIX=/usr/local` to install for everyone, and `make uninstall` (with the same `PREFIX`) to remove them.
 
-The first build downloads modules, and `build.ps1`/`make` run `go mod tidy` to create `go.sum`. CI (`.github/workflows/build.yml`) builds and packages all three platforms.
+The first build downloads modules, and `build.ps1`/`make` run `go mod tidy` to create `go.sum`. CI (`.github/workflows/build.yml`) builds all three platforms and the installers listed under [Installing](#installing); the packaging files are in `packaging/`.
 
 ## Notes and caveats
 
@@ -132,4 +152,6 @@ internal/console/          console output for the windowed Windows build
 internal/urlevent/         receives claude:// links from macOS (Apple Events)
 internal/shellwords/       argument splitting/quoting
 scripts/                   macos-url-scheme.sh adds claude:// to the packaged .app
+packaging/                 installers: nfpm.yaml (deb/rpm/Arch), linux/ (AppImage,
+                           launcher), windows/ (MSI), macos/ (dmg/pkg)
 ```

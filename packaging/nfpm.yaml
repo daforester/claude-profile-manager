@@ -1,0 +1,83 @@
+# Linux packages (.deb, .rpm, Arch .pkg.tar.zst), built by CI with nFPM:
+#   PKG_VERSION=1.2.3 PKG_RELEASE=1 nfpm package -f packaging/nfpm.yaml -p deb -t dist/
+# The binaries are expected in stage/ (see .github/workflows/build.yml).
+#
+# Dependencies cover what the binary links against plus the libraries GLFW
+# loads at runtime. RPM lists them by shared-library name, which Fedora,
+# RHEL and its rebuilds, openSUSE and Mageia all resolve, so one .rpm
+# serves them all.
+name: claude-profile-manager
+arch: amd64
+platform: linux
+version: ${PKG_VERSION}
+release: ${PKG_RELEASE}
+section: utils
+priority: optional
+maintainer: Aaron Parker <github@forester.knightmare.org.uk>
+description: |
+  Keep several Claude accounts signed in at once
+  Each profile is an isolated context with its own login, for Claude Code
+  and Claude Desktop, and they can run side by side.
+vendor: Claude Profile Manager
+homepage: https://github.com/daforester/claude-profile-manager
+license: GPL-3.0-only
+
+archlinux:
+  packager: Aaron Parker <github@forester.knightmare.org.uk>
+
+contents:
+  - src: stage/claude-profile-manager
+    dst: /usr/bin/claude-profile-manager
+    file_info: { mode: 0755 }
+  - src: stage/cpm
+    dst: /usr/bin/cpm
+    file_info: { mode: 0755 }
+  - src: packaging/linux/io.github.claudeprofilemanager.desktop
+    dst: /usr/share/applications/io.github.claudeprofilemanager.desktop
+  - src: assets/icon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/io.github.claudeprofilemanager.png
+  - src: LICENSE
+    dst: /usr/share/licenses/claude-profile-manager/LICENSE
+
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.28)
+      - libgl1
+      - libx11-6
+      - libxcursor1
+      - libxi6
+      - libxinerama1
+      - libxrandr2
+      - libxxf86vm1
+      - libwayland-client0
+      - libwayland-cursor0
+      - libwayland-egl1
+      - libxkbcommon0
+    recommends:
+      - xdg-utils
+  rpm:
+    depends:
+      - libGL.so.1()(64bit)
+      - libX11.so.6()(64bit)
+      - libXcursor.so.1()(64bit)
+      - libXi.so.6()(64bit)
+      - libXinerama.so.1()(64bit)
+      - libXrandr.so.2()(64bit)
+      - libXxf86vm.so.1()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libwayland-cursor.so.0()(64bit)
+      - libwayland-egl.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+  archlinux:
+    depends:
+      - glibc
+      - libglvnd
+      - libx11
+      - libxcursor
+      - libxi
+      - libxinerama
+      - libxrandr
+      - libxxf86vm
+      - wayland
+      - libxkbcommon
