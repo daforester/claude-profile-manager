@@ -2,12 +2,6 @@
 
 package native
 
-import (
-	"fmt"
-	"os/exec"
-	"runtime"
-)
-
 // MenuItem is an entry in a tray icon's right-click menu.
 type MenuItem struct {
 	ID    string
@@ -36,26 +30,3 @@ func (*TrayIcons) Remove(string) {}
 
 // Close is a no-op.
 func (*TrayIcons) Close() {}
-
-// SetTopmost pins a window above others. On X11 it uses wmctrl.
-func SetTopmost(ctx any, on bool) error {
-	if runtime.GOOS == "darwin" {
-		return errUnsupported
-	}
-	id, ok := windowHandle(ctx)
-	if !ok {
-		return errUnsupported
-	}
-	path, err := exec.LookPath("wmctrl")
-	if err != nil {
-		return fmt.Errorf("install wmctrl to pin windows on top")
-	}
-	op := "remove"
-	if on {
-		op = "add"
-	}
-	return exec.Command(path, "-i", "-r", fmt.Sprintf("0x%x", id), "-b", op+",above").Run()
-}
-
-// TopmostSupported reports whether SetTopmost can work on this OS.
-func TopmostSupported() bool { return runtime.GOOS != "darwin" }

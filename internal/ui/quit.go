@@ -21,6 +21,7 @@ const quitTimeout = 3 * time.Second
 // Tray icons are therefore removed up front, and a watchdog exits the process
 // (logging where it was stuck) if Fyne hasn't finished in time.
 func (g *gui) quit() {
+	g.recordPlaces()
 	usage.SaveUnsaved()
 	if g.trayIcons != nil {
 		g.trayIcons.Close()

@@ -50,6 +50,9 @@ type Settings struct {
 	PopoutHidden []string `json:"popoutHidden,omitempty"` // profile IDs not listed
 	// PopoutCompact shows one line per profile with no toolbar.
 	PopoutCompact bool `json:"popoutCompact,omitempty"`
+	// Windows records where each window was last shown, by name ("main",
+	// "popout"), so it reopens there.
+	Windows map[string]WindowPlace `json:"windows,omitempty"`
 	// RouteLinks makes Profile Manager the claude:// handler so Claude
 	// Desktop sign-in callbacks reach the profile that asked for them.
 	RouteLinks bool `json:"routeLinks,omitempty"`
@@ -135,4 +138,14 @@ func (s *Settings) SetPopoutShows(id string, show bool) {
 		out = append(out, id)
 	}
 	s.PopoutHidden = out
+}
+
+// WindowPlace is where a window was last shown: its outer top-left corner
+// in screen pixels and, for windows the user sizes, its content size in
+// Fyne units (zero when not recorded).
+type WindowPlace struct {
+	X int     `json:"x"`
+	Y int     `json:"y"`
+	W float32 `json:"w,omitempty"`
+	H float32 `json:"h,omitempty"`
 }

@@ -20,6 +20,10 @@ func windowHandle(ctx any) (uintptr, bool) {
 		h = c.WindowHandle
 	case *driver.X11WindowContext:
 		h = c.WindowHandle
+	case driver.MacWindowContext:
+		h = c.NSWindow
+	case *driver.MacWindowContext:
+		h = c.NSWindow
 	}
 	return h, h != 0
 }

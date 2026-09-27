@@ -54,7 +54,8 @@ func (g *gui) showPopout() {
 	g.pop.refresh()
 	g.pop.win.Show()
 	g.pop.visible = true
-	g.pop.applyPin()
+	g.pop.applyWindowState()
+	g.restorePlace("popout")
 	if !g.settings.PopoutOpen {
 		g.settings.PopoutOpen = true
 		_ = g.settings.Save(g.root)
@@ -68,7 +69,7 @@ func (g *gui) newPopout() *popout {
 	p.pin = widget.NewCheck("Pin on top", func(on bool) {
 		g.settings.PopoutPinned = on
 		_ = g.settings.Save(g.root)
-		p.applyPin()
+		p.applyWindowState()
 	})
 	p.pin.SetChecked(g.settings.PopoutPinned)
 	if !native.TopmostSupported() {
@@ -146,25 +147,16 @@ func (p *popout) toggleCompact() {
 		return
 	}
 
-	// Replace the window, keeping its place on screen where we can.
+	// Replace the window, reopening it where the old one was.
+	p.g.recordPlaces()
 	old := p.win
-	x, y, havePos := 0, 0, false
-	if nw, ok := old.(driver.NativeWindow); ok {
-		nw.RunNative(func(ctx any) { x, y, havePos = native.WindowPos(ctx) })
-	}
 	old.SetContent(canvas.NewRectangle(color.Transparent)) // release rows and header
 	p.newWindow()
 	p.refresh()
 	p.win.Show()
-	p.applyPin()
+	p.applyWindowState()
 	old.Close()
-	if nw, ok := p.win.(driver.NativeWindow); ok && havePos {
-		// The new window is mapped asynchronously; move it once it is.
-		go func() {
-			time.Sleep(150 * time.Millisecond)
-			fyne.Do(func() { nw.RunNative(func(ctx any) { _ = native.MoveWindow(ctx, x, y) }) })
-		}()
-	}
+	p.g.restorePlace("popout")
 }
 
 // startDrag moves the borderless window with the mouse, as its title bar
@@ -176,16 +168,18 @@ func (p *popout) startDrag() {
 }
 
 func (p *popout) close() {
+	p.g.recordPlaces()
 	p.win.Hide()
 	p.visible = false
 	p.g.settings.PopoutOpen = false
 	_ = p.g.settings.Save(p.g.root)
 }
 
-// applyPin sets or clears always-on-top on the native window.
-func (p *popout) applyPin() {
+// applyWindowState keeps the pop-out off the taskbar (and other window
+// lists) and sets or clears always-on-top, as far as the platform allows.
+func (p *popout) applyWindowState() {
 	nw, ok := p.win.(driver.NativeWindow)
-	if !ok || !native.TopmostSupported() {
+	if !ok {
 		return
 	}
 	on := p.g.settings.PopoutPinned
@@ -193,7 +187,10 @@ func (p *popout) applyPin() {
 		nw.RunNative(func(ctx any) {
 			// Errors are expected before the window is mapped; the
 			// delayed call below covers that.
-			_ = native.SetTopmost(ctx, on)
+			_ = native.SetSkipTaskbar(ctx)
+			if native.TopmostSupported() {
+				_ = native.SetTopmost(ctx, on)
+			}
 		})
 	}
 	apply()

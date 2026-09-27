@@ -55,7 +55,8 @@ type gui struct {
 	trayIcons   *native.TrayIcons
 	trayShown   map[string]bool // profile IDs with a native tray icon
 	pop         *popout
-	detailUsage func() // refreshes the usage card of the visible profile
+	places      []*placed // windows whose position is remembered (place.go)
+	detailUsage func()    // refreshes the usage card of the visible profile
 
 	routingSetupShown bool // routing-setup reminder shown this session
 }
@@ -78,6 +79,16 @@ func Run(root string, store *profile.Store, st *settings.Settings) {
 	g.win = a.NewWindow("Claude Profile Manager")
 	g.win.SetIcon(icon)
 	g.win.Resize(fyne.NewSize(1000, 660))
+	if s, ok := g.savedSize("main"); ok {
+		g.win.Resize(s)
+	}
+	g.trackPlace("main", func() fyne.Window { return g.win }, true)
+	g.trackPlace("popout", func() fyne.Window {
+		if g.pop == nil {
+			return nil
+		}
+		return g.pop.win
+	}, false)
 	g.win.SetContent(g.build())
 	g.win.SetMaster()
 	g.trayOn = !g.settings.HideTray && g.hasTray()
@@ -90,6 +101,7 @@ func Run(root string, store *profile.Store, st *settings.Settings) {
 	// from the tray menu.
 	g.win.SetCloseIntercept(func() {
 		if g.trayOn {
+			g.recordPlaces()
 			g.win.Hide()
 			return
 		}
@@ -109,6 +121,8 @@ func Run(root string, store *profile.Store, st *settings.Settings) {
 	// Native windows only exist once the event loop runs, so restore the
 	// pop-out (and its always-on-top state) after start-up.
 	a.Lifecycle().SetOnStarted(func() {
+		g.restorePlace("main")
+		g.recordPlacesPeriodically()
 		if g.settings.PopoutOpen {
 			g.showPopout()
 		}
