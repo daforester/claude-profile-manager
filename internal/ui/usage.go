@@ -23,13 +23,15 @@ import (
 
 // ---- usage bar widget -------------------------------------------------
 
-// usageBar is a thin rounded progress bar coloured by level.
+// usageBar is a thin rounded progress bar coloured by level, or by a
+// fixed colour when one is set.
 type usageBar struct {
 	widget.BaseWidget
 	pct    float64
 	has    bool
 	stale  bool
 	height float32
+	fill   *color.NRGBA // nil: colour by level
 }
 
 func newUsageBar(height float32) *usageBar {
@@ -58,10 +60,34 @@ func (b *usageBar) SetStale(stale bool) {
 
 func (b *usageBar) fillColor() color.NRGBA {
 	c := native.LevelColor(b.pct)
+	if b.fill != nil {
+		c = *b.fill
+	}
 	if b.stale {
 		c.A = 0x55
+		if b.fill != nil {
+			c.A = 0x90 // stay clear of the tinted track
+		}
 	}
 	return c
+}
+
+// trackColor is the unfilled part: a faint tint of the fixed colour, so
+// the bar identifies its profile even before there is a reading.
+func (b *usageBar) trackColor() color.Color {
+	if b.fill == nil {
+		return theme.Color(theme.ColorNameInputBackground)
+	}
+	c := *b.fill
+	c.A = 0x30
+	return c
+}
+
+// SetFill colours the bar with c instead of by level.
+func (b *usageBar) SetFill(c color.Color) {
+	n := color.NRGBAModel.Convert(c).(color.NRGBA)
+	b.fill = &n
+	b.Refresh()
 }
 
 func (b *usageBar) CreateRenderer() fyne.WidgetRenderer {
@@ -93,7 +119,7 @@ func (r *usageBarRenderer) Layout(size fyne.Size) {
 func (r *usageBarRenderer) MinSize() fyne.Size { return fyne.NewSize(40, r.b.height) }
 
 func (r *usageBarRenderer) Refresh() {
-	r.bg.FillColor = theme.Color(theme.ColorNameInputBackground)
+	r.bg.FillColor = r.b.trackColor()
 	r.bg.CornerRadius = r.b.height / 2
 	r.fill.FillColor = r.b.fillColor()
 	r.fill.CornerRadius = r.b.height / 2

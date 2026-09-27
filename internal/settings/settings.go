@@ -48,6 +48,8 @@ type Settings struct {
 	PopoutOpen   bool     `json:"popoutOpen,omitempty"`
 	PopoutPinned bool     `json:"popoutPinned,omitempty"`
 	PopoutHidden []string `json:"popoutHidden,omitempty"` // profile IDs not listed
+	// PopoutCompact shows one line per profile with no toolbar.
+	PopoutCompact bool `json:"popoutCompact,omitempty"`
 	// RouteLinks makes Profile Manager the claude:// handler so Claude
 	// Desktop sign-in callbacks reach the profile that asked for them.
 	RouteLinks bool `json:"routeLinks,omitempty"`
