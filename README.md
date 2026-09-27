@@ -91,7 +91,10 @@ go install fyne.io/tools/cmd/fyne@latest && make package   # Claude Profile Mana
 # Debian/Ubuntu
 sudo apt install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 make
+make install                  # ~/.local: binaries, icon and app launcher
 ```
+
+Linux executables can't carry an icon, so menus and docks take it from the launcher (`io.github.claudeprofilemanager.desktop`) and the icon installed under the same name. `make install` puts both in `~/.local`; use `sudo make install PREFIX=/usr/local` to install for everyone, and `make uninstall` (with the same `PREFIX`) to remove them.
 
 The first build downloads modules, and `build.ps1`/`make` run `go mod tidy` to create `go.sum`. CI (`.github/workflows/build.yml`) builds and packages all three platforms.
 
