@@ -73,10 +73,14 @@ jobs:
       # --release already adds -s -w -trimpath. no_emoji drops Fyne's 4 MB
       # bundled emoji font (the UI uses none), -Os shrinks the cgo code, and
       # fyne lifts -ldflags out of GOFLAGS to stamp the version.
+      # fyne also appends -D_FORTIFY_SOURCE=3, which AlmaLinux 8's glibc
+      # headers answer with a #warning (it is treated as 2), and Go builds
+      # runtime/cgo with -Werror; -Wno-cpp silences that warning. Linux only:
+      # clang on macOS rejects the option.
       - name: Package GUI
         shell: bash
         env:
-          CGO_CFLAGS: "-Os"
+          CGO_CFLAGS: ${{ matrix.target == 'linux' && '-Os -Wno-cpp' || '-Os' }}
         run: |
           export GOFLAGS="-ldflags=-X=claude-profile-manager/internal/cli.Version=$VERSION"
           fyne package --release --target ${{ matrix.target }} --tags no_emoji --app-version "$APPVER" --name "Claude Profile Manager"
